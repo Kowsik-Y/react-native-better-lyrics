@@ -80,6 +80,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
   shadowAmount = 8,
   style,
   isPillWord = false,
+  hasSpaceAfter = false,
 }: {
   word: LyricWord;
   time: SharedValue<number>;
@@ -91,6 +92,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
   shadowAmount?: number;
   style?: TextStyle;
   isPillWord?: boolean;
+  hasSpaceAfter?: boolean;
 }) {
   const animatedWordStyle = useAnimatedStyle(() => {
     const isLineActive = time.value >= line.startMs && time.value < line.endMs;
@@ -225,9 +227,12 @@ const LyricWordView = memo(function LyricWordViewComponent({
     }
   });
 
+  const cleanWordText = word.text.trim();
+
   return (
     <Animated.Text style={[styles.wordBase, style, animatedWordStyle]}>
-      {word.text}
+      {cleanWordText}
+      {hasSpaceAfter ? ' ' : ''}
     </Animated.Text>
   );
 });
@@ -600,6 +605,60 @@ export const LyricLineView = memo(function LyricLineViewComponent({
     enableWordAnimation,
   ]);
 
+  const wordSpaces = useMemo(() => {
+    if (!line.words || line.words.length === 0) return [];
+    const fullText = (line.text || '').trim();
+    let searchIndex = 0;
+    return line.words.map((w, idx) => {
+      if (idx === line.words!.length - 1) return false;
+      const nextW = line.words![idx + 1];
+      if (w.text.endsWith(' ') || w.text.endsWith('\u00A0')) return true;
+      if (
+        nextW &&
+        (nextW.text.startsWith(' ') || nextW.text.startsWith('\u00A0'))
+      ) {
+        return true;
+      }
+
+      if (!fullText) return true;
+
+      const clean = w.text.trim();
+      if (!clean) return false;
+
+      let foundAt = fullText.indexOf(clean, searchIndex);
+      if (foundAt === -1) {
+        foundAt = fullText
+          .toLowerCase()
+          .indexOf(clean.toLowerCase(), searchIndex);
+      }
+
+      if (foundAt === -1) {
+        return true;
+      }
+
+      const afterCharIndex = foundAt + clean.length;
+      searchIndex = afterCharIndex;
+
+      if (afterCharIndex < fullText.length) {
+        const nextClean = nextW ? nextW.text.trim() : '';
+        if (nextClean) {
+          let nextFoundAt = fullText.indexOf(nextClean, afterCharIndex);
+          if (nextFoundAt === -1) {
+            nextFoundAt = fullText
+              .toLowerCase()
+              .indexOf(nextClean.toLowerCase(), afterCharIndex);
+          }
+          if (nextFoundAt !== -1) {
+            const gap = fullText.slice(afterCharIndex, nextFoundAt);
+            return /\s/.test(gap);
+          }
+        }
+        return /\s/.test(fullText[afterCharIndex] || '');
+      }
+      return false;
+    });
+  }, [line.words, line.text]);
+
   const animatedContainerStyle = useAnimatedStyle(() => {
     const isActive = time.value >= line.startMs && time.value < line.endMs;
     const isPast = time.value >= line.endMs;
@@ -749,6 +808,7 @@ export const LyricLineView = memo(function LyricLineViewComponent({
                 glowDurationThreshold={glowDurationThreshold}
                 shadowAmount={shadowAmount}
                 style={activeLineStyle}
+                hasSpaceAfter={wordSpaces[i] ?? false}
               />
             ))}
           </View>
@@ -791,6 +851,7 @@ export const LyricLineView = memo(function LyricLineViewComponent({
                     romanizationTextStyle || styles.defaultRomanizationText
                   }
                   isPillWord={true}
+                  hasSpaceAfter={i < romanizationWords.length - 1}
                 />
               ))
             ) : (

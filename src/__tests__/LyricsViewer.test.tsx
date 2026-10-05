@@ -30,4 +30,19 @@ describe('LyricsViewer', () => {
     const component = <LyricsViewer document={doc} currentTimeMs={0} />;
     expect(component).toBeDefined();
   });
+
+  it('should render word-level lyrics without crashing', () => {
+    const doc = parseLRC(
+      "[00:01.00] <00:01.00>Say <00:01.50>you <00:02.00>can't <00:02.50>sleep"
+    );
+    const component = (
+      <LyricsViewer
+        document={doc}
+        currentTimeMs={1200}
+        enableWordAnimation={true}
+      />
+    );
+    expect(component).toBeDefined();
+    expect(doc.lines[0]?.words?.length).toBe(4);
+  });
 });

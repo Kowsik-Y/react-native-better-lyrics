@@ -364,7 +364,9 @@ export function LyricsViewer({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingVertical:
-            scrollViewHeight > 0 ? Math.max(120, scrollViewHeight / 2 - 40) : 250,
+            scrollViewHeight > 0
+              ? Math.max(120, scrollViewHeight / 2 - 40)
+              : 250,
           paddingHorizontal: 16,
         }}
         {...(Platform.OS === 'web'
