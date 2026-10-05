@@ -1,5 +1,5 @@
 {
-  "main": "../lib/commonjs/vtt/index.js",
+  "main": "../lib/module/vtt/index.js",
   "module": "../lib/module/vtt/index.js",
   "types": "../lib/typescript/src/vtt/index.d.ts",
   "react-native": "../src/vtt/index.ts",
