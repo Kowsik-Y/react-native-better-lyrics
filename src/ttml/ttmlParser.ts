@@ -5,8 +5,9 @@ import type { LyricsDocument, LyricWord } from '../core/types';
 // Note: Real TTML is full XML, but for react-native we avoid heavy DOM parsers where possible.
 const P_TAG_REGEX =
   /<p[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>(.*?)<\/p>/gs;
+// Matches <span ... begin="HH:MM:SS.ms" end="HH:MM:SS.ms" ...>Text</span> followed by optional whitespace
 const SPAN_TAG_REGEX =
-  /<span[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>(.*?)<\/span>/gs;
+  /<span[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>(.*?)<\/span>(\s*)/gs;
 
 function ttmlTimeToMs(timeStr: string): number {
   // Format typically: HH:MM:SS.ms, MM:SS.ms, or SS.ms (e.g. "9.731" or "9.731s")
@@ -81,16 +82,20 @@ export function parseTTML(rawXml: string): LyricsDocument {
         if (spanMatch[1] && spanMatch[2]) {
           const wordStart = ttmlTimeToMs(spanMatch[1]);
           const wordEnd = ttmlTimeToMs(spanMatch[2]);
-          const text = decodeHtmlEntities(
-            (spanMatch[3] || '').replace(/<[^>]*>?/gm, '').trim()
+          const rawText = decodeHtmlEntities(
+            (spanMatch[3] || '').replace(/<[^>]*>?/gm, '')
           );
-          if (text) {
+          const hasSpaceAfter =
+            (spanMatch[4] && spanMatch[4].length > 0) || rawText.endsWith(' ');
+          const cleanText = rawText.trim();
+          if (cleanText) {
+            const wordText = hasSpaceAfter ? `${cleanText} ` : cleanText;
             words.push({
               startMs: wordStart,
               endMs: wordEnd,
-              text: text,
+              text: wordText,
             });
-            plainText += text + ' ';
+            plainText += wordText;
           }
         }
       }

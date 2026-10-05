@@ -337,6 +337,7 @@ export function LyricsViewer({
     >
       {showResumeScroll && showResumeAutoscrollButton && (
         <View
+          pointerEvents="box-none"
           style={[styles.resumeButtonContainer, resumeAutoscrollButtonStyle]}
         >
           <Pressable
@@ -362,8 +363,9 @@ export function LyricsViewer({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingVertical: scrollViewHeight > 0 ? scrollViewHeight / 2 : 300,
-          paddingHorizontal: 12,
+          paddingVertical:
+            scrollViewHeight > 0 ? Math.max(120, scrollViewHeight / 2 - 40) : 250,
+          paddingHorizontal: 16,
         }}
         {...(Platform.OS === 'web'
           ? {
@@ -410,7 +412,7 @@ export function LyricsViewer({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: 'transparent',
   },
   scrollView: {
     flex: 1,
@@ -418,7 +420,10 @@ const styles = StyleSheet.create({
   resumeButtonContainer: {
     position: 'absolute',
     top: 18,
-    alignSelf: 'center',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 999,
     ...(Platform.OS === 'web'
       ? ({

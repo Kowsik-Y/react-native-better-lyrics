@@ -99,7 +99,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
     if (!isLineActive) {
       return {
         color: inactiveColor,
-        opacity: isPillWord ? 0.6 : 0.45,
+        opacity: isPillWord ? 0.8 : 1,
         transform: [{ translateY: 0 }],
         ...(isWeb
           ? ({
@@ -124,7 +124,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
       // Future word within active line (waiting to be sung)
       return {
         color: inactiveColor,
-        opacity: isPillWord ? 0.6 : 0.45,
+        opacity: isPillWord ? 0.7 : 0.55,
         transform: [{ translateY: 0 }],
         ...(isWeb
           ? ({
@@ -227,7 +227,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
 
   return (
     <Animated.Text style={[styles.wordBase, style, animatedWordStyle]}>
-      {word.text}{' '}
+      {word.text}
     </Animated.Text>
   );
 });
