@@ -4,17 +4,30 @@
   "description": "A cinematic lyrics viewer for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "react-native-better-lyrics-source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
+    "./ttml": {
+      "react-native-better-lyrics-source": "./src/ttml/index.ts",
+      "types": "./lib/typescript/src/ttml/index.d.ts",
+      "default": "./lib/module/ttml/index.js"
+    },
+    "./vtt": {
+      "react-native-better-lyrics-source": "./src/vtt/index.ts",
+      "types": "./lib/typescript/src/vtt/index.d.ts",
+      "default": "./lib/module/vtt/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "lib",
+    "ttml",
+    "vtt",
     "android",
     "ios",
     "cpp",
@@ -47,14 +60,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dev/react-native-better-lyrics.git"
+    "url": "git+https://github.com/Kowsik-Y/react-native-better-lyrics.git"
   },
-  "author": "Dev <dev@example.com> (https://github.com/dev)",
+  "author": "Kowsik-Y <gowsikthirisha@gmail.com> (https://github.com/Kowsik-Y)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dev/react-native-better-lyrics/issues"
+    "url": "https://github.com/Kowsik-Y/react-native-better-lyrics/issues"
   },
-  "homepage": "https://github.com/dev/react-native-better-lyrics#readme",
+  "homepage": "https://github.com/Kowsik-Y/react-native-better-lyrics#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -67,6 +80,7 @@
     "@react-native/eslint-config": "0.86.2",
     "@react-native/jest-preset": "0.86.2",
     "@release-it/conventional-changelog": "^12.0.0",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.2.0",
     "del-cli": "^7.0.0",
     "eslint": "^9.39.5",
@@ -78,13 +92,29 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-builder-bob": "^0.43.1",
+    "react-native-reanimated": "4.5.1",
+    "react-native-svg": "15.15.4",
+    "react-native-worklets": "0.10.1",
     "release-it": "^21.0.1",
     "turbo": "^2.10.8",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "react": "*",
-    "react-native": "*"
+    "react-native": "*",
+    "react-native-reanimated": ">=3.16.0",
+    "react-native-svg": ">=13.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-masked-view/masked-view": {
+      "optional": true
+    },
+    "@shopify/react-native-skia": {
+      "optional": true
+    },
+    "react-native-svg": {
+      "optional": true
+    }
   },
   "workspaces": [
     "example"
@@ -127,6 +157,9 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!(?:.pnpm/)?((jest-)?react-native|@react-native(-community)?|react-native-reanimated)/)"
     ]
   },
   "release-it": {

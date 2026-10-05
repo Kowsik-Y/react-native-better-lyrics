@@ -1,0 +1,7 @@
+{
+  "main": "../lib/commonjs/ttml/index.js",
+  "module": "../lib/module/ttml/index.js",
+  "types": "../lib/typescript/src/ttml/index.d.ts",
+  "react-native": "../src/ttml/index.ts",
+  "sideEffects": false
+}
