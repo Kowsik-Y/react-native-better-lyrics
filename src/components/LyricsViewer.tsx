@@ -28,6 +28,7 @@ export interface LyricsViewerProps {
   autoScrollResyncDelay?: number;
   motionDuration?: number;
   enableWordAnimation?: boolean;
+  estimateWordTimings?: boolean;
   glowDurationThreshold?: number;
   shadowAmount?: number;
   onLinePress?: (line: LyricsDocument['lines'][0], index: number) => void;
@@ -66,6 +67,7 @@ export function LyricsViewer({
   autoScrollResyncDelay = 2000,
   motionDuration = 300,
   enableWordAnimation = true,
+  estimateWordTimings = false,
   glowDurationThreshold = 750,
   shadowAmount = 8,
   onLinePress,
@@ -166,25 +168,43 @@ export function LyricsViewer({
 
   const prevActiveIndex = useSharedValue(-1);
 
+  const activeLineIndex = useSharedValue(0);
+
+  // Fast binary search to find active line in O(log N) time matching LRC playback standard
+  const findActiveIndex = (t: number) => {
+    'worklet';
+    const lines = document.lines;
+    const len = lines.length;
+    if (len === 0) return 0;
+    let low = 0;
+    let high = len - 1;
+    let result = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const l = lines[mid];
+      if (!l) break;
+      if (l.startMs <= t) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result >= 0 ? result : 0;
+  };
+
   // Auto-scroll logic
   useFrameCallback(() => {
     if (isUserScrolling.value || scrollViewHeight === 0) return;
 
     const time = activeTime.value;
-    let activeIndex = -1;
+    const activeIndex = findActiveIndex(time);
 
-    for (let i = 0; i < document.lines.length; i++) {
-      const line = document.lines[i];
-      if (line && time >= line.startMs && time < line.endMs) {
-        activeIndex = i;
-        break;
-      }
-    }
-
-    if (activeIndex !== -1 && activeIndex !== prevActiveIndex.value) {
+    if (activeIndex !== activeLineIndex.value) {
+      activeLineIndex.value = activeIndex;
+      prevActiveIndex.value = activeIndex;
       const offsetData = lineOffsets.value[activeIndex];
       if (offsetData) {
-        prevActiveIndex.value = activeIndex;
         const targetY =
           offsetData.y - scrollViewHeight / 2 + offsetData.height / 2;
         scrollTo(scrollViewRef, 0, Math.max(0, targetY), true);
@@ -247,9 +267,10 @@ export function LyricsViewer({
     (line: LyricsDocument['lines'][0], index: number) => {
       isUserScrolling.value = false;
       setShowResumeScroll(false);
+      activeLineIndex.value = index;
+      prevActiveIndex.value = index;
       const offsetData = lineOffsets.value[index];
       if (offsetData && scrollViewHeight > 0) {
-        prevActiveIndex.value = index;
         const targetY =
           offsetData.y - scrollViewHeight / 2 + offsetData.height / 2;
         scrollTo(scrollViewRef, 0, Math.max(0, targetY), true);
@@ -257,6 +278,7 @@ export function LyricsViewer({
       onLinePress?.(line, index);
     },
     [
+      activeLineIndex,
       isUserScrolling,
       lineOffsets,
       onLinePress,
@@ -306,6 +328,15 @@ export function LyricsViewer({
       line: LyricsDocument['lines'][0],
       index: number
     ): 'left' | 'right' | 'center' => {
+      if (line.isBackground || line.agent === 'v1000') {
+        return 'center';
+      }
+      if (line.agent === 'v1') {
+        return 'left';
+      }
+      if (line.agent === 'v2') {
+        return 'right';
+      }
       if (getSpeakerAlignment) {
         return getSpeakerAlignment(line.speaker, index);
       }
@@ -384,6 +415,7 @@ export function LyricsViewer({
             index={index}
             line={line}
             time={activeTime}
+            activeLineIndex={activeLineIndex}
             alignment={getLineAlignment(line, index)}
             onLayoutLine={handleLayoutLine}
             onPress={() => handleLinePress(line, index)}
@@ -397,6 +429,7 @@ export function LyricsViewer({
             romanizationTextStyle={romanizationTextStyle}
             motionDuration={motionDuration}
             enableWordAnimation={enableWordAnimation}
+            estimateWordTimings={estimateWordTimings}
             glowDurationThreshold={glowDurationThreshold}
             shadowAmount={shadowAmount}
             showSpeakerBadge={showSpeakerBadge}

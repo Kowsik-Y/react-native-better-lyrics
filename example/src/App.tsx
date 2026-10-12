@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,11 @@ import Animated, {
   Easing,
   useAnimatedStyle,
 } from 'react-native-reanimated';
-import { LyricsViewer, parseLRC } from 'react-native-better-lyrics';
+import {
+  LyricsViewer,
+  NativeLyricsViewer,
+  parseLRC,
+} from 'react-native-better-lyrics';
 import { parseTTML } from '../../src/ttml/ttmlParser';
 import { parseVTT } from '../../src/vtt/vttParser';
 import type { LyricsDocument } from 'react-native-better-lyrics';
@@ -92,6 +96,9 @@ export default function App() {
   );
   const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>(
     'left'
+  );
+  const [useNativeRenderer, setUseNativeRenderer] = useState(
+    Platform.OS === 'android'
   );
 
   // Typography overrides
@@ -314,7 +321,7 @@ export default function App() {
     return currentTime.value + syncOffset;
   });
 
-  const getInactiveColor = () => {
+  const getInactiveColor = useCallback(() => {
     if (activeColor === '#ffffff')
       return `rgba(255, 255, 255, ${inactiveOpacity})`;
     if (activeColor === '#f6c358')
@@ -326,7 +333,123 @@ export default function App() {
     if (activeColor === '#10B981')
       return `rgba(16, 185, 129, ${inactiveOpacity})`;
     return `rgba(255, 255, 255, ${inactiveOpacity})`;
-  };
+  }, [activeColor, inactiveOpacity]);
+
+  const handleLinePress = useCallback(
+    (line: any) => {
+      currentTime.value = line.startMs;
+      setCurrentTimeMs(line.startMs);
+      ytPlayerRef.current?.seekTo(line.startMs / 1000);
+    },
+    [currentTime]
+  );
+
+  const memoizedLineStyle = useMemo(
+    () => ({ marginVertical: lineGap }),
+    [lineGap]
+  );
+
+  const memoizedActiveLineStyle = useMemo(
+    () => ({
+      ...(theme === 'Fluid'
+        ? styles.activeLineFluid
+        : theme === 'Ambient'
+          ? styles.activeLineAmbient
+          : styles.activeLineClassic),
+      textAlign,
+      fontSize,
+      lineHeight: Math.round(fontSize * 1.35),
+      color: activeColor,
+      fontFamily: fontFamily === 'System' ? undefined : fontFamily,
+    }),
+    [theme, textAlign, fontSize, activeColor, fontFamily]
+  );
+
+  const memoizedInactiveLineStyle = useMemo(
+    () => ({
+      ...(theme === 'Fluid'
+        ? styles.inactiveLineFluid
+        : theme === 'Ambient'
+          ? styles.futureLineAmbient
+          : styles.inactiveLineClassic),
+      textAlign,
+      fontSize,
+      lineHeight: Math.round(fontSize * 1.35),
+      color: getInactiveColor(),
+      fontFamily: fontFamily === 'System' ? undefined : fontFamily,
+    }),
+    [theme, textAlign, fontSize, getInactiveColor, fontFamily]
+  );
+
+  const memoizedPastLineStyle = useMemo(
+    () =>
+      theme === 'Ambient'
+        ? {
+            ...styles.pastLineAmbient,
+            textAlign,
+            fontSize,
+            lineHeight: Math.round(fontSize * 1.35),
+            fontFamily: fontFamily === 'System' ? undefined : fontFamily,
+          }
+        : undefined,
+    [theme, textAlign, fontSize, fontFamily]
+  );
+
+  const memoizedFutureLineStyle = useMemo(
+    () =>
+      theme === 'Ambient'
+        ? {
+            ...styles.futureLineAmbient,
+            textAlign,
+            fontSize,
+            lineHeight: Math.round(fontSize * 1.35),
+            fontFamily: fontFamily === 'System' ? undefined : fontFamily,
+          }
+        : undefined,
+    [theme, textAlign, fontSize, fontFamily]
+  );
+
+  const memoizedRomanizationContainerStyle = useMemo(
+    () => ({
+      display: showRomanization ? ('flex' as const) : ('none' as const),
+      borderColor: pillBorderColor,
+      borderWidth: pillBorderWidth,
+      borderRadius: pillBorderRadius,
+      backgroundColor: pillBgColor,
+      alignSelf:
+        textAlign === 'left'
+          ? ('flex-start' as const)
+          : textAlign === 'right'
+            ? ('flex-end' as const)
+            : ('center' as const),
+    }),
+    [
+      showRomanization,
+      pillBorderColor,
+      pillBorderWidth,
+      pillBorderRadius,
+      pillBgColor,
+      textAlign,
+    ]
+  );
+
+  const memoizedRomanizationTextStyle = useMemo(
+    () => ({
+      fontSize: pillFontSize,
+      textAlign,
+    }),
+    [pillFontSize, textAlign]
+  );
+
+  const memoizedTranslationStyle = useMemo(
+    () => ({
+      display: showTranslation ? ('flex' as const) : ('none' as const),
+      color: translationColor,
+      fontSize: translationFontSize,
+      textAlign,
+    }),
+    [showTranslation, translationColor, translationFontSize, textAlign]
+  );
 
   return (
     <View
@@ -701,95 +824,42 @@ export default function App() {
         </ScrollView>
       ) : (
         <>
-          <LyricsViewer
-            document={doc}
-            currentTimeMs={timeWithOffset}
-            containerStyle={styles.lyricsContainer}
-            lineStyle={{ marginVertical: lineGap }}
-            duetMode={duetMode}
-            showSpeakerBadge={showSpeakerBadge}
-            activeLineStyle={{
-              ...(theme === 'Fluid'
-                ? styles.activeLineFluid
-                : theme === 'Ambient'
-                  ? styles.activeLineAmbient
-                  : styles.activeLineClassic),
-              textAlign,
-              fontSize,
-              lineHeight: Math.round(fontSize * 1.35),
-              color: activeColor,
-              fontFamily: fontFamily === 'System' ? undefined : fontFamily,
-            }}
-            inactiveLineStyle={{
-              ...(theme === 'Fluid'
-                ? styles.inactiveLineFluid
-                : theme === 'Ambient'
-                  ? styles.futureLineAmbient
-                  : styles.inactiveLineClassic),
-              textAlign,
-              fontSize,
-              lineHeight: Math.round(fontSize * 1.35),
-              color: getInactiveColor(),
-              fontFamily: fontFamily === 'System' ? undefined : fontFamily,
-            }}
-            pastLineStyle={
-              theme === 'Ambient'
-                ? {
-                    ...styles.pastLineAmbient,
-                    textAlign,
-                    fontSize,
-                    lineHeight: Math.round(fontSize * 1.35),
-                    fontFamily:
-                      fontFamily === 'System' ? undefined : fontFamily,
-                  }
-                : undefined
-            }
-            futureLineStyle={
-              theme === 'Ambient'
-                ? {
-                    ...styles.futureLineAmbient,
-                    textAlign,
-                    fontSize,
-                    lineHeight: Math.round(fontSize * 1.35),
-                    fontFamily:
-                      fontFamily === 'System' ? undefined : fontFamily,
-                  }
-                : undefined
-            }
-            romanizationContainerStyle={{
-              display: showRomanization ? 'flex' : 'none',
-              borderColor: pillBorderColor,
-              borderWidth: pillBorderWidth,
-              borderRadius: pillBorderRadius,
-              backgroundColor: pillBgColor,
-              alignSelf:
-                textAlign === 'left'
-                  ? 'flex-start'
-                  : textAlign === 'right'
-                    ? 'flex-end'
-                    : 'center',
-            }}
-            romanizationTextStyle={{
-              fontSize: pillFontSize,
-              textAlign,
-            }}
-            translationStyle={{
-              display: showTranslation ? 'flex' : 'none',
-              color: translationColor,
-              fontSize: translationFontSize,
-              textAlign,
-            }}
-            enableWordAnimation={theme === 'Fluid' || theme === 'Ambient'}
-            autoScrollResyncDelay={resyncDelay}
-            motionDuration={motionDuration}
-            glowDurationThreshold={glowThreshold}
-            shadowAmount={shadowAmount}
-            onLinePress={(line) => {
-              currentTime.value = line.startMs;
-              setCurrentTimeMs(line.startMs);
-              ytPlayerRef.current?.seekTo(line.startMs / 1000);
-            }}
-          />
+          {useNativeRenderer && Platform.OS === 'android' ? (
+            <NativeLyricsViewer
+              document={doc}
+              currentTimeMs={currentTime}
+              containerStyle={styles.lyricsContainer}
+              activeColor={activeColor}
+              inactiveColor={getInactiveColor()}
+              textSize={fontSize}
+              lineSpacing={1.15}
+              enableWordAnimation={theme === 'Fluid' || theme === 'Ambient'}
+              onLinePress={handleLinePress}
+            />
+          ) : (
+            <LyricsViewer
+              document={doc}
+              currentTimeMs={timeWithOffset}
+              containerStyle={styles.lyricsContainer}
+              lineStyle={memoizedLineStyle}
+              duetMode={duetMode}
+              showSpeakerBadge={showSpeakerBadge}
+              activeLineStyle={memoizedActiveLineStyle}
+              inactiveLineStyle={memoizedInactiveLineStyle}
+              pastLineStyle={memoizedPastLineStyle}
+              futureLineStyle={memoizedFutureLineStyle}
+              romanizationContainerStyle={memoizedRomanizationContainerStyle}
+              romanizationTextStyle={memoizedRomanizationTextStyle}
+              translationStyle={memoizedTranslationStyle}
+              enableWordAnimation={theme === 'Fluid' || theme === 'Ambient'}
+              estimateWordTimings={false}
+              autoScrollResyncDelay={resyncDelay}
+              motionDuration={motionDuration}
+              glowDurationThreshold={glowThreshold}
+              shadowAmount={shadowAmount}
+              onLinePress={handleLinePress}
+            />
+          )}
 
           {showControls && (
             <View style={styles.playerControls}>
@@ -799,9 +869,36 @@ export default function App() {
                   style={styles.inlineSettings}
                   showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.settingSectionTitle}>
-                    Theme & Visuals
-                  </Text>
+                  <Text style={styles.settingSectionTitle}>Engine & Theme</Text>
+                  {Platform.OS === 'android' && (
+                    <View style={styles.settingRow}>
+                      <Text style={styles.settingText}>Engine</Text>
+                      <View style={styles.buttonRow}>
+                        <Pressable
+                          onPress={() => setUseNativeRenderer(true)}
+                          style={[
+                            styles.editButton,
+                            useNativeRenderer && styles.formatBtnActive,
+                          ]}
+                        >
+                          <Text style={styles.editButtonText}>
+                            Native (Echo-Music)
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => setUseNativeRenderer(false)}
+                          style={[
+                            styles.editButton,
+                            !useNativeRenderer && styles.formatBtnActive,
+                          ]}
+                        >
+                          <Text style={styles.editButtonText}>
+                            Reanimated (JS)
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                   <View style={styles.settingRow}>
                     <Text style={styles.settingText}>Theme</Text>
                     <View style={styles.buttonRow}>

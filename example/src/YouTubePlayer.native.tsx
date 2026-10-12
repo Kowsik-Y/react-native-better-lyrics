@@ -99,7 +99,7 @@ function buildPlayerHtml(videoId: string) {
           var t = player.getCurrentTime();
           sendToRN('time', t);
         }
-      }, 50);
+      }, 100);
     }
 
     function stopTimer() {

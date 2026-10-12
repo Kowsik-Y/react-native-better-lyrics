@@ -9,6 +9,8 @@ export interface LyricLine {
   endMs: number;
   text: string;
   speaker?: string;
+  agent?: string;
+  isBackground?: boolean;
   isInstrumental?: boolean;
   words?: LyricWord[];
   translation?: string;

@@ -1,0 +1,63 @@
+buildscript {
+  ext.safeExtGet = {prop, fallback ->
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+  }
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.2.1"
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22"
+  }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+def getExtOrDefault(name, defaultValue) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : defaultValue
+}
+
+android {
+  compileSdkVersion getExtOrDefault("compileSdkVersion", 34)
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion", 21)
+    targetSdkVersion getExtOrDefault("targetSdkVersion", 34)
+    versionCode 1
+    versionName "1.0"
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+    }
+  }
+
+  lintOptions {
+    disable "GradleCompatible"
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  kotlinOptions {
+    jvmTarget = "1.8"
+  }
+}
+
+repositories {
+  mavenCentral()
+  google()
+}
+
+dependencies {
+  //noinspection GradleDynamicVersion
+  implementation "com.facebook.react:react-android:+"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
+  implementation "androidx.core:core-ktx:1.12.0"
+  implementation "androidx.appcompat:appcompat:1.6.1"
+}

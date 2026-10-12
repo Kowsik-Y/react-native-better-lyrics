@@ -1,5 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { LyricsViewer } from '../components/LyricsViewer';
+import { NativeLyricsViewer } from '../components/NativeLyricsViewer';
 
 jest.mock('react-native-reanimated', () => {
   const View = require('react-native').View;
@@ -44,5 +45,11 @@ describe('LyricsViewer', () => {
     );
     expect(component).toBeDefined();
     expect(doc.lines[0]?.words?.length).toBe(4);
+  });
+
+  it('should render NativeLyricsViewer without crashing', () => {
+    const doc = parseLRC('[00:00.00] Native lyric line');
+    const component = <NativeLyricsViewer document={doc} currentTimeMs={0} />;
+    expect(component).toBeDefined();
   });
 });

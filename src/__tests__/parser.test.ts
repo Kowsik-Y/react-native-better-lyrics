@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, it, expect, beforeAll } from '@jest/globals';
-import { parseLRC } from '../core/parser';
+import { parseLRC, estimateLineWordTimings } from '../core/parser';
 import { getActiveLineIndices } from '../core/activeLine';
 
 describe('Lyrics Parser', () => {
@@ -75,6 +75,34 @@ describe('Lyrics Parser', () => {
     expect(doc.lines[1]?.isInstrumental).toBe(true);
     expect(doc.lines[2]?.isInstrumental).toBe(true);
     expect(doc.lines[3]?.isInstrumental).toBe(true);
+  });
+
+  it('should parse agent and bg tags matching Echo-Music format', () => {
+    const doc = parseLRC(
+      '[00:05.00] {agent:v1} Main singer verse\n[00:10.00] {agent:v2} Duet response\n[00:15.00] {bg} Backing vocals harmony'
+    );
+    expect(doc.lines[0]?.agent).toBe('v1');
+    expect(doc.lines[0]?.text).toBe('Main singer verse');
+
+    expect(doc.lines[1]?.agent).toBe('v2');
+    expect(doc.lines[1]?.text).toBe('Duet response');
+
+    expect(doc.lines[2]?.isBackground).toBe(true);
+    expect(doc.lines[2]?.text).toBe('Backing vocals harmony');
+  });
+
+  it('should estimate proportional word timings for lines without word timestamps', () => {
+    const doc = parseLRC(
+      '[00:00.00] Hello wonderful world\n[00:04.00] Next line'
+    );
+    const firstLine = doc.lines[0]!;
+    const words = estimateLineWordTimings(firstLine);
+    expect(words.length).toBe(3);
+    expect(words[0]?.text).toBe('Hello');
+    expect(words[1]?.text).toBe('wonderful');
+    expect(words[2]?.text).toBe('world');
+    expect(words[0]?.startMs).toBe(0);
+    expect(words[2]?.endMs).toBeGreaterThan(words[1]?.startMs || 0);
   });
 });
 

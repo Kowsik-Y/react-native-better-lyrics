@@ -16,4 +16,18 @@ const config = withMetroConfig(getDefaultConfig(__dirname), {
   conditions: ['react-native-better-lyrics-source'],
 });
 
+const defaultServer = config.server || {};
+config.server = {
+  ...defaultServer,
+  rewriteRequestUrl: (url) => {
+    if (url.startsWith('/index.bundle')) {
+      return url.replace('/index.bundle', '/example/index.bundle');
+    }
+    if (defaultServer.rewriteRequestUrl) {
+      return defaultServer.rewriteRequestUrl(url);
+    }
+    return url;
+  },
+};
+
 module.exports = config;

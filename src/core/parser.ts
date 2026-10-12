@@ -9,6 +9,47 @@ const METADATA_TAG_REGEX = /\[([a-zA-Z]+):([^\]]*)\]/;
 const INSTRUMENTAL_REGEX =
   /^\s*(?:[([].*?(?:instrumental|solo|bridge|intro|outro|music|interlude|break).*?[)\]]|(?:instrumental|interlude|music)|[♫♪♩♬\s]+)\s*$/i;
 
+// Matches {agent:value}
+const AGENT_TAG_REGEX = /\{agent:([^}]+)\}/i;
+// Matches {bg}
+const BACKGROUND_TAG_REGEX = /\{bg\}/i;
+
+export function estimateLineWordTimings(
+  line: LyricLine,
+  minDurationMs = 300
+): LyricWord[] {
+  if (line.words && line.words.length > 0) {
+    return line.words;
+  }
+  const text = line.text?.trim();
+  if (!text) return [];
+
+  const rawWords = text.split(/\s+/).filter(Boolean);
+  if (rawWords.length === 0) return [];
+
+  const lineDuration = Math.max(line.endMs - line.startMs, minDurationMs);
+  const activeDuration = Math.max(lineDuration * 0.95, minDurationMs);
+  const totalChars = text.length;
+
+  let accumulatedTime = 0;
+  return rawWords.map((word, index) => {
+    const isLast = index === rawWords.length - 1;
+    const charCount = isLast ? word.length : word.length + 1;
+    const wordDur =
+      totalChars > 0
+        ? Math.round((activeDuration * charCount) / totalChars)
+        : Math.round(activeDuration / rawWords.length);
+    const startMs = line.startMs + accumulatedTime;
+    const endMs = startMs + Math.max(wordDur, 50);
+    accumulatedTime += wordDur;
+    return {
+      text: word,
+      startMs,
+      endMs,
+    };
+  });
+}
+
 function timeToMs(m: string, s: string, fraction?: string): number {
   const min = parseInt(m, 10);
   const sec = parseInt(s, 10);
@@ -83,6 +124,21 @@ export function parseLRC(rawText: string): LyricsDocument {
 
     // Get the text payload (strip timestamps)
     let payload = line.replace(TIME_TAG_REGEX, '').trim();
+
+    // Extract agent tag {agent:...} if present
+    let agent: string | undefined;
+    const agentMatch = payload.match(AGENT_TAG_REGEX);
+    if (agentMatch && agentMatch[1]) {
+      agent = agentMatch[1].trim();
+      payload = payload.replace(AGENT_TAG_REGEX, '').trim();
+    }
+
+    // Extract background tag {bg} if present
+    let isBackground = false;
+    if (BACKGROUND_TAG_REGEX.test(payload)) {
+      isBackground = true;
+      payload = payload.replace(BACKGROUND_TAG_REGEX, '').trim();
+    }
 
     // Extract speaker if present [Artist]: text
     let speaker: string | undefined;
@@ -166,6 +222,8 @@ export function parseLRC(rawText: string): LyricsDocument {
         text: payload,
       };
       if (speaker) newLyricLine.speaker = speaker;
+      if (agent) newLyricLine.agent = agent;
+      if (isBackground) newLyricLine.isBackground = true;
       if (isInstrumental) newLyricLine.isInstrumental = true;
       if (words) {
         // Deep copy words and adjust their startMs by offset

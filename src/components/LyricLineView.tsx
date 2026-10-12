@@ -2,21 +2,25 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, Pressable, Platform } from 'react-native';
 import type { LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
 import Animated, {
+  useSharedValue,
   useAnimatedStyle,
   withTiming,
   interpolateColor,
   interpolate,
   Extrapolation,
   useAnimatedReaction,
+  Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import type { LyricLine, LyricWord } from '../core/types';
+import { estimateLineWordTimings } from '../core/parser';
 
 export interface LyricLineViewProps {
   line: LyricLine;
   index: number;
   time: SharedValue<number>;
+  activeLineIndex?: SharedValue<number>;
   onLayoutLine: (index: number, y: number, height: number) => void;
   onPress?: () => void;
   activeLineStyle?: TextStyle;
@@ -29,6 +33,7 @@ export interface LyricLineViewProps {
   romanizationTextStyle?: TextStyle;
   motionDuration?: number;
   enableWordAnimation?: boolean;
+  estimateWordTimings?: boolean;
   glowDurationThreshold?: number;
   shadowAmount?: number;
   alignment?: 'left' | 'right' | 'center';
@@ -81,6 +86,8 @@ const LyricWordView = memo(function LyricWordViewComponent({
   style,
   isPillWord = false,
   hasSpaceAfter = false,
+  isLineActive,
+  lineState,
 }: {
   word: LyricWord;
   time: SharedValue<number>;
@@ -93,21 +100,29 @@ const LyricWordView = memo(function LyricWordViewComponent({
   style?: TextStyle;
   isPillWord?: boolean;
   hasSpaceAfter?: boolean;
+  isLineActive?: SharedValue<number>;
+  lineState?: SharedValue<number>;
 }) {
   const animatedWordStyle = useAnimatedStyle(() => {
-    const isLineActive = time.value >= line.startMs && time.value < line.endMs;
+    const active = isLineActive
+      ? isLineActive.value === 1
+      : time.value >= line.startMs && time.value < line.endMs;
 
-    // Line is not active (past or future line)
-    if (!isLineActive) {
+    // Line is not active (past or future line) - DO NOT read time.value!
+    if (!active) {
+      const isPast = lineState
+        ? lineState.value === 2
+        : time.value >= line.endMs;
+      const staticColor = inactiveColor;
       return {
-        color: inactiveColor,
-        opacity: isPillWord ? 0.8 : 1,
+        color: staticColor,
+        opacity: isPillWord ? (isPast ? 0.75 : 0.65) : isPast ? 0.45 : 0.4,
         transform: [{ translateY: 0 }],
         ...(isWeb
           ? ({
               textShadow: 'none',
               backgroundImage: 'none',
-              WebkitTextFillColor: inactiveColor,
+              WebkitTextFillColor: staticColor,
               filter: 'none',
             } as any)
           : {
@@ -118,11 +133,12 @@ const LyricWordView = memo(function LyricWordViewComponent({
       };
     }
 
+    const currentTime = time.value;
     const start = word.startMs;
     const end =
       word.endMs > word.startMs ? word.endMs : word.startMs + motionDuration;
 
-    if (time.value < start) {
+    if (currentTime < start) {
       // Future word within active line (waiting to be sung)
       return {
         color: inactiveColor,
@@ -141,7 +157,7 @@ const LyricWordView = memo(function LyricWordViewComponent({
               textShadowOffset: { width: 0, height: 0 },
             }),
       };
-    } else if (time.value >= end) {
+    } else if (currentTime >= end) {
       // Past word within active line (already sung)
       return {
         color: activeColor,
@@ -162,14 +178,13 @@ const LyricWordView = memo(function LyricWordViewComponent({
       };
     } else {
       // Word is actively being sung right now!
-      const duration = end - start;
+      const duration = Math.max(end - start, 1);
       const isLongWord = duration >= glowDurationThreshold;
-      const rawProgress = (time.value - start) / Math.max(duration, 1);
-      const progress = Number.isNaN(rawProgress) ? 0 : rawProgress;
+      const progress = (currentTime - start) / duration;
       const clamped = Math.max(0, Math.min(1, progress));
-      const pct = (clamped * 100).toFixed(1);
 
-      // Translate text Y-axis while singing (preserved and distinct)
+      // Echo-Music sinusoidal bounce (translateY only - preserves 60fps on Android)
+      const sinProgress = Math.sin(clamped * Math.PI);
       const translateY = isPillWord
         ? 0
         : interpolate(
@@ -177,16 +192,13 @@ const LyricWordView = memo(function LyricWordViewComponent({
             [0, 0.25, 0.75, 1],
             [0, isLongWord ? -3.5 : -2, isLongWord ? -3 : -1.5, 0],
             Extrapolation.CLAMP
-          );
+          ) -
+          sinProgress * 1.5;
 
-      // Glow effect is ONLY shadow of text (controlled by shadowAmount)
-      const glowRadius = isLongWord
-        ? isPillWord
-          ? Math.round(shadowAmount * 0.6)
-          : shadowAmount
-        : 0;
+      const glowActive = isLongWord || clamped > 0.1;
 
       if (isWeb) {
+        const pct = (clamped * 100).toFixed(1);
         return {
           color: 'transparent',
           opacity: 1,
@@ -195,10 +207,9 @@ const LyricWordView = memo(function LyricWordViewComponent({
           WebkitBackgroundClip: 'text',
           backgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          filter:
-            isLongWord && glowRadius > 0
-              ? `drop-shadow(0 0 ${glowRadius}px ${activeColor})`
-              : 'none',
+          filter: glowActive
+            ? `drop-shadow(0 0 ${shadowAmount}px ${activeColor})`
+            : 'none',
         } as any;
       } else {
         const color = interpolateColor(
@@ -210,18 +221,9 @@ const LyricWordView = memo(function LyricWordViewComponent({
           color,
           opacity: 1,
           transform: [{ translateY }],
-          ...(isWeb
-            ? ({
-                textShadow:
-                  isLongWord && glowRadius > 0
-                    ? `0 0 ${glowRadius}px ${activeColor}`
-                    : 'none',
-              } as any)
-            : {
-                textShadowColor: isLongWord ? activeColor : 'transparent',
-                textShadowRadius: glowRadius,
-                textShadowOffset: { width: 0, height: 0 },
-              }),
+          textShadowColor: glowActive ? activeColor : 'transparent',
+          textShadowRadius: glowActive ? (isLongWord ? shadowAmount : 6) : 0,
+          textShadowOffset: { width: 0, height: 0 },
         };
       }
     }
@@ -432,22 +434,75 @@ const InstrumentalBreakView = memo(function InstrumentalBreakViewComponent({
 
   const glowPad = Math.max(shadowAmount * 2, 16);
 
+  const activeProgress = useSharedValue(0);
+  const pastProgress = useSharedValue(0);
+
+  useAnimatedReaction(
+    () => {
+      if (time.value < line.startMs) return 0;
+      if (time.value >= line.endMs) return 2;
+      return 1;
+    },
+    (curr, prev) => {
+      if (curr !== prev) {
+        if (curr === 1) {
+          activeProgress.value = withTiming(1, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+          pastProgress.value = withTiming(0, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+        } else if (curr === 2) {
+          activeProgress.value = withTiming(0, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+          pastProgress.value = withTiming(1, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+        } else {
+          activeProgress.value = withTiming(0, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+          pastProgress.value = withTiming(0, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+        }
+      }
+    },
+    [line.startMs, line.endMs]
+  );
+
   const animatedContainerStyle = useAnimatedStyle(() => {
-    const isActive = time.value >= line.startMs && time.value < line.endMs;
-    const isPast = time.value >= line.endMs;
-    let targetOpacity = 0.55;
-    if (isActive) targetOpacity = 1;
-    else if (isPast) targetOpacity = 0.35;
+    const baseOpacity = interpolate(
+      pastProgress.value,
+      [0, 1],
+      [0.55, 0.35],
+      Extrapolation.CLAMP
+    );
+    const opacity = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [baseOpacity, 1],
+      Extrapolation.CLAMP
+    );
+    const translateY = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [0, -2],
+      Extrapolation.CLAMP
+    );
 
     return {
-      opacity: withTiming(targetOpacity, { duration: 300 }),
-      transform: [
-        {
-          translateY: withTiming(isActive ? -2 : 0, { duration: 300 }),
-        },
-      ],
+      opacity,
+      transform: [{ translateY }],
     };
-  }, [line.startMs, line.endMs]);
+  });
 
   const animatedVerticalLoadingStyle = useAnimatedStyle(() => {
     const isActive = time.value >= line.startMs && time.value < line.endMs;
@@ -462,10 +517,16 @@ const InstrumentalBreakView = memo(function InstrumentalBreakViewComponent({
     }
 
     if (isPast) {
-      // Past: smoothly fade out active fill so base inactive note remains visible at past opacity
+      // Past: smoothly fade out active fill via pastProgress
+      const fillOpacity = interpolate(
+        pastProgress.value,
+        [0, 1],
+        [1, 0],
+        Extrapolation.CLAMP
+      );
       return {
         height: iconSize + glowPad,
-        opacity: withTiming(0, { duration: 300 }),
+        opacity: fillOpacity,
       };
     }
 
@@ -546,6 +607,7 @@ export const LyricLineView = memo(function LyricLineViewComponent({
   line,
   index,
   time,
+  activeLineIndex,
   onLayoutLine,
   onPress,
   activeLineStyle,
@@ -558,6 +620,7 @@ export const LyricLineView = memo(function LyricLineViewComponent({
   romanizationTextStyle,
   motionDuration = 300,
   enableWordAnimation = true,
+  estimateWordTimings = false,
   glowDurationThreshold = 750,
   shadowAmount = 8,
   alignment,
@@ -578,12 +641,23 @@ export const LyricLineView = memo(function LyricLineViewComponent({
   const inactiveColor =
     (inactiveLineStyle?.color as string) || 'rgba(255, 255, 255, 0.4)';
 
+  const effectiveWords = useMemo(() => {
+    if (line.words && line.words.length > 0) {
+      return line.words;
+    }
+    if (enableWordAnimation && estimateWordTimings) {
+      return estimateLineWordTimings(line);
+    }
+    return undefined;
+  }, [line, enableWordAnimation, estimateWordTimings]);
+
   const romanizationWords = useMemo(() => {
     if (!line.romanization) return null;
     const split = line.romanization.trim().split(/\s+/);
-    if (enableWordAnimation && line.words && line.words.length > 0) {
+    if (enableWordAnimation && effectiveWords && effectiveWords.length > 0) {
       return split.map((text, i) => {
-        const sourceWord = line.words![Math.min(i, line.words!.length - 1)];
+        const sourceWord =
+          effectiveWords[Math.min(i, effectiveWords.length - 1)];
         if (!sourceWord) {
           return { text, startMs: line.startMs, endMs: line.endMs };
         }
@@ -599,19 +673,19 @@ export const LyricLineView = memo(function LyricLineViewComponent({
     ];
   }, [
     line.romanization,
-    line.words,
+    effectiveWords,
     line.startMs,
     line.endMs,
     enableWordAnimation,
   ]);
 
   const wordSpaces = useMemo(() => {
-    if (!line.words || line.words.length === 0) return [];
+    if (!effectiveWords || effectiveWords.length === 0) return [];
     const fullText = (line.text || '').trim();
     let searchIndex = 0;
-    return line.words.map((w, idx) => {
-      if (idx === line.words!.length - 1) return false;
-      const nextW = line.words![idx + 1];
+    return effectiveWords.map((w, idx) => {
+      if (idx === effectiveWords.length - 1) return false;
+      const nextW = effectiveWords[idx + 1];
       if (w.text.endsWith(' ') || w.text.endsWith('\u00A0')) return true;
       if (
         nextW &&
@@ -657,61 +731,136 @@ export const LyricLineView = memo(function LyricLineViewComponent({
       }
       return false;
     });
-  }, [line.words, line.text]);
+  }, [effectiveWords, line.text]);
+
+  const isLineActive = useSharedValue(0);
+  const lineState = useSharedValue(0);
+  const activeProgress = useSharedValue(0);
+  const pastProgress = useSharedValue(0);
+
+  useAnimatedReaction(
+    () => {
+      if (activeLineIndex) {
+        return activeLineIndex.value;
+      }
+      if (time.value < line.startMs) return 0;
+      if (time.value >= line.endMs) return 2;
+      return 1;
+    },
+    (curr, prev) => {
+      if (curr !== prev) {
+        if (activeLineIndex) {
+          const isActive = curr === index;
+          const isPast = curr > index;
+          lineState.value = isActive ? 1 : isPast ? 2 : 0;
+          isLineActive.value = isActive ? 1 : 0;
+          activeProgress.value = isActive
+            ? withTiming(1, {
+                duration: Math.min(motionDuration, 200),
+                easing: Easing.out(Easing.cubic),
+              })
+            : 0;
+          pastProgress.value = isPast ? 1 : 0;
+          return;
+        }
+
+        lineState.value = curr;
+        if (curr === 1) {
+          isLineActive.value = 1;
+          activeProgress.value = withTiming(1, {
+            duration: motionDuration,
+            easing: Easing.out(Easing.cubic),
+          });
+          pastProgress.value = 0;
+        } else if (curr === 2) {
+          isLineActive.value = 0;
+          activeProgress.value = 0;
+          pastProgress.value = 1;
+        } else {
+          isLineActive.value = 0;
+          activeProgress.value = 0;
+          pastProgress.value = 0;
+        }
+      }
+    },
+    [activeLineIndex, index, line.startMs, line.endMs, motionDuration]
+  );
 
   const animatedContainerStyle = useAnimatedStyle(() => {
-    const isActive = time.value >= line.startMs && time.value < line.endMs;
-    const isPast = time.value >= line.endMs;
-
-    let targetOpacity = 0.55;
-    if (isActive) {
-      targetOpacity = 1;
-    } else if (isPast) {
-      targetOpacity = 0.35;
-    }
+    const baseOpacity = interpolate(
+      pastProgress.value,
+      [0, 1],
+      [0.55, 0.35],
+      Extrapolation.CLAMP
+    );
+    const opacity = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [baseOpacity, 1],
+      Extrapolation.CLAMP
+    );
+    const translateY = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [0, -2],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [0.88, 1],
+      Extrapolation.CLAMP
+    );
 
     return {
-      opacity: withTiming(targetOpacity, { duration: motionDuration }),
-      transform: [
-        {
-          translateY: withTiming(isActive ? -2 : 0, {
-            duration: motionDuration,
-          }),
-        },
-      ],
+      opacity,
+      transform: [{ translateY }, { scale }],
     };
   });
 
   const animatedTextStyle = useAnimatedStyle(() => {
-    const isActive = time.value >= line.startMs && time.value < line.endMs;
-    const isPast = time.value >= line.endMs;
+    const isPast = pastProgress.value > 0.5;
+    const fallbackColor = isPast
+      ? (pastLineStyle?.color as string) || inactiveColor
+      : (futureLineStyle?.color as string) || inactiveColor;
 
-    let styleToUse = inactiveLineStyle;
-    if (isActive) styleToUse = activeLineStyle;
-    else if (isPast && pastLineStyle) styleToUse = pastLineStyle;
-    else if (!isPast && !isActive && futureLineStyle)
-      styleToUse = futureLineStyle;
+    const color = interpolateColor(
+      activeProgress.value,
+      [0, 1],
+      [fallbackColor, activeColor]
+    );
 
     return {
-      ...(styleToUse || {}),
-      color: withTiming(isActive ? activeColor : inactiveColor, {
-        duration: motionDuration,
-      }),
+      color,
     };
   });
 
   const animatedRomanizationStyle = useAnimatedStyle(() => {
-    const isActive = time.value >= line.startMs && time.value < line.endMs;
+    const opacity = interpolate(
+      activeProgress.value,
+      [0, 1],
+      [0.6, 1.0],
+      Extrapolation.CLAMP
+    );
+    const color = interpolateColor(
+      activeProgress.value,
+      [0, 1],
+      ['rgba(255, 255, 255, 0.6)', activeColor]
+    );
     return {
-      opacity: withTiming(isActive ? 1 : 0.6, { duration: motionDuration }),
-      color: withTiming(isActive ? activeColor : 'rgba(255, 255, 255, 0.6)', {
-        duration: motionDuration,
-      }),
+      opacity,
+      color,
     };
   });
 
   const resolvedAlign =
-    alignment || (activeLineStyle as any)?.textAlign || 'center';
+    line.isBackground || line.agent === 'v1000'
+      ? 'center'
+      : line.agent === 'v1'
+        ? 'left'
+        : line.agent === 'v2'
+          ? 'right'
+          : alignment || (activeLineStyle as any)?.textAlign || 'center';
   const alignItems =
     resolvedAlign === 'left'
       ? 'flex-start'
@@ -755,7 +904,8 @@ export const LyricLineView = memo(function LyricLineViewComponent({
     );
   }
 
-  const hasWords = enableWordAnimation && line.words && line.words.length > 0;
+  const hasWords =
+    enableWordAnimation && Boolean(effectiveWords && effectiveWords.length > 0);
 
   return (
     <Animated.View
@@ -796,7 +946,7 @@ export const LyricLineView = memo(function LyricLineViewComponent({
               },
             ]}
           >
-            {line.words!.map((word, i) => (
+            {effectiveWords!.map((word, i) => (
               <LyricWordView
                 key={i}
                 word={word}
@@ -807,14 +957,27 @@ export const LyricLineView = memo(function LyricLineViewComponent({
                 motionDuration={motionDuration}
                 glowDurationThreshold={glowDurationThreshold}
                 shadowAmount={shadowAmount}
-                style={activeLineStyle}
+                style={
+                  line.isBackground
+                    ? ([activeLineStyle, styles.backgroundWord] as any)
+                    : activeLineStyle
+                }
                 hasSpaceAfter={wordSpaces[i] ?? false}
+                isLineActive={isLineActive}
+                lineState={lineState}
               />
             ))}
           </View>
         ) : (
           <Animated.Text
-            style={[styles.defaultLine, animatedTextStyle, { textAlign }]}
+            style={[
+              styles.defaultLine,
+              line.isBackground && styles.backgroundWord,
+              inactiveLineStyle,
+              activeLineStyle,
+              animatedTextStyle,
+              { textAlign },
+            ]}
           >
             {line.text}
           </Animated.Text>
@@ -852,6 +1015,8 @@ export const LyricLineView = memo(function LyricLineViewComponent({
                   }
                   isPillWord={true}
                   hasSpaceAfter={i < romanizationWords.length - 1}
+                  isLineActive={isLineActive}
+                  lineState={lineState}
                 />
               ))
             ) : (
@@ -922,6 +1087,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     textAlign: 'center',
+  },
+  backgroundWord: {
+    fontStyle: 'italic',
+    fontSize: 20,
+    opacity: 0.85,
   },
   defaultRomanizationContainer: {
     marginTop: 6,
